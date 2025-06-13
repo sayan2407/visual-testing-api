@@ -64,7 +64,8 @@ app.post('/api/capture', async (req, res) => {
     '--disable-accelerated-2d-canvas',
     '--no-first-run',
     '--single-process'
-    ]
+    ],
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath()
     });
     const page = await browser.newPage();
     
