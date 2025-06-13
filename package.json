@@ -5,8 +5,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js",
-    "build": "echo 'Skipping build'",
-    "postinstall": "npx puppeteer browsers install chrome"
+    "build": "echo 'Skipping build'"
   },
   "keywords": [],
   "author": "",
