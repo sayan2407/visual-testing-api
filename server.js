@@ -1,22 +1,36 @@
-// server.js
 const express = require('express');
-// const puppeteer = require('puppeteer');
-const chromium = require('chrome-aws-lambda');
-const puppeteer = require('puppeteer-core');
-
-const { PNG } = require('pngjs');
-const pixelmatch = require('pixelmatch');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
+const { PNG } = require('pngjs');
+const pixelmatch = require('pixelmatch');
+
+// Puppeteer handling
+const isProduction = process.env.IS_RENDER === 'true' || process.env.AWS_EXECUTION_ENV;
+let puppeteer, executablePath, args, headless, defaultViewport;
+
+if (isProduction) {
+    const chromium = require('chrome-aws-lambda');
+    puppeteer = require('puppeteer-core');
+    executablePath = async () => await chromium.executablePath;
+    args = chromium.args;
+    headless = chromium.headless;
+    defaultViewport = chromium.defaultViewport;
+} else {
+    puppeteer = require('puppeteer');
+    executablePath = async () => puppeteer.executablePath();
+    args = ['--no-sandbox', '--disable-setuid-sandbox'];
+    headless = true;
+    defaultViewport = { width: 1280, height: 800 };
+}
+
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Configure storage for uploaded screenshots
+// File Upload Setup
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         const dir = path.join(__dirname, 'uploads');
@@ -29,57 +43,34 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Screenshot endpoint
+// Screenshot API
 app.post('/api/capture', async (req, res) => {
     try {
         const { url, time, testId } = req.body;
 
-        // Validate input
         if (!url || !time || !['before', 'after'].includes(time)) {
             return res.status(400).json({ error: 'Missing url or invalid time (must be "before" or "after")' });
         }
+        if (!testId) return res.status(400).json({ error: 'testId is required' });
 
-        if (!testId) {
-            return res.status(400).json({ error: 'testId is required' });
-        }
-
-        // Create organized directory structure
         const baseDir = path.join(__dirname, 'uploads');
         const timeDir = path.join(baseDir, time);
         const diffDir = path.join(baseDir, 'diff');
-
-        // Ensure directories exist
         [baseDir, timeDir, diffDir].forEach(dir => {
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         });
 
-        // Generate consistent filename
-        const filename = `${testId}.png`; // Now just using testId.png
+        const filename = `${testId}.png`;
         const filepath = path.join(timeDir, filename);
 
-        // Capture screenshot
-        // const browser = await puppeteer.launch({
-        //     headless: "new",
-        //     args: [
-        //         '--no-sandbox',
-        //         '--disable-setuid-sandbox',
-        //         '--disable-dev-shm-usage',
-        //         '--disable-accelerated-2d-canvas',
-        //         '--no-first-run',
-        //         '--single-process'
-        //     ],
-        //     executablePath: puppeteer.executablePath()
-        // });
         const browser = await puppeteer.launch({
-            args: chromium.args,
-            defaultViewport: chromium.defaultViewport,
-            executablePath: await chromium.executablePath,
-            headless: chromium.headless,
+            args,
+            defaultViewport,
+            executablePath: await executablePath(),
+            headless,
         });
 
-
         const page = await browser.newPage();
-
         await page.setViewport({ width: 1280, height: 800 });
         await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
 
@@ -108,21 +99,17 @@ app.post('/api/capture', async (req, res) => {
     }
 });
 
-// Comparison endpoint
+// Image Comparison API
 app.post('/api/compare', async (req, res) => {
     try {
         const { testId } = req.body;
-
-        if (!testId) {
-            return res.status(400).json({ error: 'testId is required' });
-        }
+        if (!testId) return res.status(400).json({ error: 'testId is required' });
 
         const baseDir = path.join(__dirname, 'uploads');
         const beforePath = path.join(baseDir, 'before', `${testId}.png`);
         const afterPath = path.join(baseDir, 'after', `${testId}.png`);
         const diffPath = path.join(baseDir, 'diff', `${testId}.png`);
 
-        // Verify files exist
         if (!fs.existsSync(beforePath) || !fs.existsSync(afterPath)) {
             return res.status(404).json({
                 error: 'Before/after images not found',
@@ -134,7 +121,6 @@ app.post('/api/compare', async (req, res) => {
             });
         }
 
-        // Compare images
         const img1 = PNG.sync.read(fs.readFileSync(beforePath));
         const img2 = PNG.sync.read(fs.readFileSync(afterPath));
 
@@ -156,7 +142,6 @@ app.post('/api/compare', async (req, res) => {
         );
 
         fs.writeFileSync(diffPath, PNG.sync.write(diff));
-
         const diffPercentage = (diffPixels / (img1.width * img1.height) * 100).toFixed(2);
 
         res.json({
