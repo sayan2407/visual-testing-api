@@ -57,7 +57,14 @@ app.post('/api/capture', async (req, res) => {
     // Capture screenshot
     const browser = await puppeteer.launch({
       headless: "new",
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: [
+        '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-accelerated-2d-canvas',
+    '--no-first-run',
+    '--single-process'
+    ]
     });
     const page = await browser.newPage();
     
