@@ -15,23 +15,46 @@ app.use(express.urlencoded({ extended: true }));
 
 // Configure storage for uploaded screenshots
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = path.join(__dirname, 'uploads');
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir);
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => {
-    cb(null, `${Date.now()}-${file.originalname}`);
-  }
+    destination: (req, file, cb) => {
+        const dir = path.join(__dirname, 'uploads');
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+        cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+        cb(null, `${Date.now()}-${file.originalname}`);
+    }
 });
 const upload = multer({ storage });
 
 // Screenshot endpoint
 app.post('/api/capture', async (req, res) => {
   try {
-    const { url } = req.body;
-    if (!url) return res.status(400).json({ error: 'URL is required' });
+    const { url, time, testId } = req.body;
+    
+    // Validate input
+    if (!url || !time || !['before', 'after'].includes(time)) {
+      return res.status(400).json({ error: 'Missing url or invalid time (must be "before" or "after")' });
+    }
 
+    if (!testId) {
+      return res.status(400).json({ error: 'testId is required' });
+    }
+
+    // Create organized directory structure
+    const baseDir = path.join(__dirname, 'uploads');
+    const timeDir = path.join(baseDir, time);
+    const diffDir = path.join(baseDir, 'diff');
+    
+    // Ensure directories exist
+    [baseDir, timeDir, diffDir].forEach(dir => {
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    });
+
+    // Generate consistent filename
+    const filename = `${testId}.png`; // Now just using testId.png
+    const filepath = path.join(timeDir, filename);
+
+    // Capture screenshot
     const browser = await puppeteer.launch({
       headless: "new",
       args: ['--no-sandbox', '--disable-setuid-sandbox']
@@ -40,15 +63,6 @@ app.post('/api/capture', async (req, res) => {
     
     await page.setViewport({ width: 1280, height: 800 });
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
-
-    // Get full page height
-    const bodyHandle = await page.$('body');
-    const { height } = await bodyHandle.boundingBox();
-    await bodyHandle.dispose();
-
-    // Generate filename
-    const filename = `screenshot-${Date.now()}.png`;
-    const filepath = path.join(__dirname, 'uploads', filename);
 
     await page.screenshot({
       path: filepath,
@@ -60,36 +74,59 @@ app.post('/api/capture', async (req, res) => {
 
     res.json({
       success: true,
-      filename,
-      filepath: `/uploads/${filename}`
+      imagePath: `/uploads/${time}/${filename}`,
+      time,
+      testId,
+      timestamp: Date.now()
     });
 
   } catch (error) {
     console.error('Capture error:', error);
-    res.status(500).json({ error: 'Failed to capture screenshot' });
+    res.status(500).json({ 
+      error: 'Failed to capture screenshot',
+      details: error.message
+    });
   }
 });
 
 // Comparison endpoint
-app.post('/api/compare', upload.fields([
-  { name: 'before', maxCount: 1 },
-  { name: 'after', maxCount: 1 }
-]), async (req, res) => {
+app.post('/api/compare', async (req, res) => {
   try {
-    if (!req.files.before || !req.files.after) {
-      return res.status(400).json({ error: 'Both before and after images are required' });
+    const { testId } = req.body;
+    
+    if (!testId) {
+      return res.status(400).json({ error: 'testId is required' });
     }
 
-    const beforePath = req.files.before[0].path;
-    const afterPath = req.files.after[0].path;
-    const diffFilename = `diff-${Date.now()}.png`;
-    const diffPath = path.join(__dirname, 'uploads', diffFilename);
+    const baseDir = path.join(__dirname, 'uploads');
+    const beforePath = path.join(baseDir, 'before', `${testId}.png`);
+    const afterPath = path.join(baseDir, 'after', `${testId}.png`);
+    const diffPath = path.join(baseDir, 'diff', `${testId}.png`);
 
+    // Verify files exist
+    if (!fs.existsSync(beforePath) || !fs.existsSync(afterPath)) {
+      return res.status(404).json({
+        error: 'Before/after images not found',
+        details: {
+          testId,
+          beforeExists: fs.existsSync(beforePath),
+          afterExists: fs.existsSync(afterPath)
+        }
+      });
+    }
+
+    // Compare images
     const img1 = PNG.sync.read(fs.readFileSync(beforePath));
     const img2 = PNG.sync.read(fs.readFileSync(afterPath));
 
     if (img1.width !== img2.width || img1.height !== img2.height) {
-      return res.status(400).json({ error: 'Image dimensions do not match' });
+      return res.status(400).json({ 
+        error: 'Image dimensions do not match',
+        details: {
+          before: { width: img1.width, height: img1.height },
+          after: { width: img2.width, height: img2.height }
+        }
+      });
     }
 
     const diff = new PNG({ width: img1.width, height: img1.height });
@@ -105,15 +142,20 @@ app.post('/api/compare', upload.fields([
 
     res.json({
       success: true,
-      diffPixels,
+      diffUrl: `/uploads/diff/${testId}.png`,
+      beforeUrl: `/uploads/before/${testId}.png`,
+      afterUrl: `/uploads/after/${testId}.png`,
       diffPercentage,
-      diffFilename,
-      diffUrl: `/uploads/${diffFilename}`
+      testId
     });
 
   } catch (error) {
     console.error('Comparison error:', error);
-    res.status(500).json({ error: 'Failed to compare images' });
+    res.status(500).json({ 
+      error: 'Failed to compare images',
+      details: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
@@ -121,5 +163,5 @@ app.post('/api/compare', upload.fields([
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.listen(port, () => {
-  console.log(`API server running on port ${port}`);
+    console.log(`API server running on port ${port}`);
 });
