@@ -1,6 +1,9 @@
 // server.js
 const express = require('express');
-const puppeteer = require('puppeteer');
+// const puppeteer = require('puppeteer');
+const chromium = require('chrome-aws-lambda');
+const puppeteer = require('puppeteer-core');
+
 const { PNG } = require('pngjs');
 const pixelmatch = require('pixelmatch');
 const fs = require('fs');
@@ -55,18 +58,25 @@ app.post('/api/capture', async (req, res) => {
         const filepath = path.join(timeDir, filename);
 
         // Capture screenshot
+        // const browser = await puppeteer.launch({
+        //     headless: "new",
+        //     args: [
+        //         '--no-sandbox',
+        //         '--disable-setuid-sandbox',
+        //         '--disable-dev-shm-usage',
+        //         '--disable-accelerated-2d-canvas',
+        //         '--no-first-run',
+        //         '--single-process'
+        //     ],
+        //     executablePath: puppeteer.executablePath()
+        // });
         const browser = await puppeteer.launch({
-            headless: "new",
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--no-first-run',
-                '--single-process'
-            ],
-            executablePath: puppeteer.executablePath()
+            args: chromium.args,
+            defaultViewport: chromium.defaultViewport,
+            executablePath: await chromium.executablePath,
+            headless: chromium.headless,
         });
+
 
         const page = await browser.newPage();
 
