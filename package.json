@@ -16,6 +16,6 @@
     "multer": "^2.0.1",
     "pixelmatch": "^5.2.0",
     "pngjs": "^7.0.0",
-    "puppeteer": "^24.10.1"
+    "puppeteer": "^21.9.0"
   }
 }
