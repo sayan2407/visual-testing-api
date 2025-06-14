@@ -16,9 +16,7 @@
     "multer": "^2.0.1",
     "pixelmatch": "^5.2.0",
     "pngjs": "^7.0.0",
-    "puppeteer-core": "^10.4.0"
+    "puppeteer": "^21.0.0"
   },
-  "devDependencies": {
-    "puppeteer": "^10.4.0"
-  }
+  "devDependencies": {}
 }
