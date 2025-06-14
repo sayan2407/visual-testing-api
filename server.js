@@ -47,7 +47,7 @@ app.post('/api/capture', async (req, res) => {
         const filepath = path.join(timeDir, filename);
 
         const executablePath = isProduction
-            ? '/usr/bin/chromium-browser'
+            ? '/usr/bin/chromium'
             : puppeteer.executablePath();
 
         const browser = await puppeteer.launch({
