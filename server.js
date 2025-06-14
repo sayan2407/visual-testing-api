@@ -155,6 +155,26 @@ app.post('/api/compare', async (req, res) => {
     }
 });
 
+// Add this temporary route (remove after debugging)
+app.get('/debug-env', (req, res) => {
+  const criticalPaths = [
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome'
+  ].map(p => ({
+    path: p,
+    exists: require('fs').existsSync(p)
+  }));
+
+  res.json({
+    env: {
+      PUPPETEER_EXECUTABLE_PATH: process.env.PUPPETEER_EXECUTABLE_PATH,
+      NODE_ENV: process.env.NODE_ENV
+    },
+    criticalPaths,
+    renderInfo: "Running on Render free tier"
+  });
+});
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.listen(port, () => {
