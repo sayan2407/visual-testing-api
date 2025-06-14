@@ -6,28 +6,8 @@ const { PNG } = require('pngjs');
 const pixelmatch = require('pixelmatch');
 
 const isProduction = process.env.NODE_ENV === 'production';
+const puppeteer = isProduction ? require('puppeteer-core') : require('puppeteer');
 
-let puppeteer;
-let launchOptions = {};
-
-if (isProduction) {
-    const chromium = require('chrome-aws-lambda');
-    puppeteer = require('puppeteer-core');
-    launchOptions = {
-        args: chromium.args,
-        defaultViewport: chromium.defaultViewport,
-        executablePath: async () => await chromium.executablePath || '/usr/bin/chromium-browser',
-        headless: chromium.headless,
-    };
-} else {
-    puppeteer = require('puppeteer');
-    launchOptions = {
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-        defaultViewport: { width: 1280, height: 800 },
-        executablePath: async () => puppeteer.executablePath(),
-        headless: true,
-    };
-}
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -66,11 +46,22 @@ app.post('/api/capture', async (req, res) => {
         const filename = `${testId}.png`;
         const filepath = path.join(timeDir, filename);
 
+        const executablePath = isProduction
+            ? '/usr/bin/chromium-browser'
+            : puppeteer.executablePath();
+
         const browser = await puppeteer.launch({
-            args: launchOptions.args,
-            defaultViewport: launchOptions.defaultViewport,
-            executablePath: await launchOptions.executablePath(),
-            headless: launchOptions.headless,
+            headless: true,
+            executablePath,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--no-first-run',
+                '--no-zygote',
+                '--disable-gpu'
+            ],
         });
 
         const page = await browser.newPage();
