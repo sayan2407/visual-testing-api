@@ -5,23 +5,28 @@ const multer = require('multer');
 const { PNG } = require('pngjs');
 const pixelmatch = require('pixelmatch');
 
-// Puppeteer handling
-const isProduction = process.env.IS_RENDER === 'true' || process.env.AWS_EXECUTION_ENV;
-let puppeteer, executablePath, args, headless, defaultViewport;
+const isProduction = process.env.NODE_ENV === 'production';
+
+let puppeteer;
+let launchOptions = {};
 
 if (isProduction) {
     const chromium = require('chrome-aws-lambda');
     puppeteer = require('puppeteer-core');
-    executablePath = async () => await chromium.executablePath;
-    args = chromium.args;
-    headless = chromium.headless;
-    defaultViewport = chromium.defaultViewport;
+    launchOptions = {
+        args: chromium.args,
+        defaultViewport: chromium.defaultViewport,
+        executablePath: async () => await chromium.executablePath || '/usr/bin/chromium-browser',
+        headless: chromium.headless,
+    };
 } else {
     puppeteer = require('puppeteer');
-    executablePath = async () => puppeteer.executablePath();
-    args = ['--no-sandbox', '--disable-setuid-sandbox'];
-    headless = true;
-    defaultViewport = { width: 1280, height: 800 };
+    launchOptions = {
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        defaultViewport: { width: 1280, height: 800 },
+        executablePath: async () => puppeteer.executablePath(),
+        headless: true,
+    };
 }
 
 const app = express();
@@ -30,7 +35,6 @@ const port = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// File Upload Setup
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         const dir = path.join(__dirname, 'uploads');
@@ -43,7 +47,6 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Screenshot API
 app.post('/api/capture', async (req, res) => {
     try {
         const { url, time, testId } = req.body;
@@ -64,10 +67,10 @@ app.post('/api/capture', async (req, res) => {
         const filepath = path.join(timeDir, filename);
 
         const browser = await puppeteer.launch({
-            args,
-            defaultViewport,
-            executablePath: await executablePath(),
-            headless,
+            args: launchOptions.args,
+            defaultViewport: launchOptions.defaultViewport,
+            executablePath: await launchOptions.executablePath(),
+            headless: launchOptions.headless,
         });
 
         const page = await browser.newPage();
@@ -99,7 +102,6 @@ app.post('/api/capture', async (req, res) => {
     }
 });
 
-// Image Comparison API
 app.post('/api/compare', async (req, res) => {
     try {
         const { testId } = req.body;
@@ -157,13 +159,11 @@ app.post('/api/compare', async (req, res) => {
         console.error('Comparison error:', error);
         res.status(500).json({
             error: 'Failed to compare images',
-            details: error.message,
-            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+            details: error.message
         });
     }
 });
 
-// Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.listen(port, () => {
